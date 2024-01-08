@@ -839,49 +839,79 @@ function setup_secfs() {
 }
 
 function start_secfs() {
+	if [ -f /etc/cte/cte.cfg ]; then
+		CTE_FUSE=y
+	fi
         echo "starting secfs."$id" ["$interval"] " | tee -a $LOGDIR/profile-log.$RUN_NUMBER
 	secfsd -status guard > $LOGDIR/secfs-guards
 	secfsd -status guard -v > $LOGDIR/secfs-guards_v
-        voradmin cmd profile_on
         SECFS_WATCH_OUTPUT_FILE=$LOGDIR/secfs-watch.$id.$RUN_NUMBER
         SECFS_IO_OUTPUT_FILE=$LOGDIR/secfs-io.$id.$RUN_NUMBER
         SECFS_READ_OUTPUT_FILE=$LOGDIR/secfs-read.$id.$RUN_NUMBER
         SECFS_WRITE_OUTPUT_FILE=$LOGDIR/secfs-write.$id.$RUN_NUMBER
-        while [ 1 ]; do
-                echo "============================= SAMPLE =============================" >> ${SECFS_WATCH_OUTPUT_FILE}
-                date >> ${SECFS_WATCH_OUTPUT_FILE}
-                echo >> ${SECFS_WATCH_OUTPUT_FILE}
-                secfsd -profile show | cat >> ${SECFS_WATCH_OUTPUT_FILE}
-                secfsd -profile clear
-                echo >> ${SECFS_WATCH_OUTPUT_FILE}
 
-                echo "============================= SAMPLE =============================" >> ${SECFS_IO_OUTPUT_FILE}
-                date >> ${SECFS_IO_OUTPUT_FILE}
-                echo >> ${SECFS_IO_OUTPUT_FILE}
-                cat /proc/fs/secfs/io_op_counters >> ${SECFS_IO_OUTPUT_FILE}
-                echo >> ${SECFS_IO_OUTPUT_FILE}
+        if [ "$CTE_FUSE" == 'y' ]; then
+		GP_LIST=$(secfsd -status guard | grep "^/" | awk '{ print $1 }')
+		for GP in $GP_LIST; do
+			secfsd -profile on $GP
+		done
+		while [ 1 ]; do
+			for GP in $GP_LIST; do
+				GP_EXT=$(echo $GP | sed -r 's/\/+/%/g')
+				echo "============================= SAMPLE =============================" >> ${SECFS_WATCH_OUTPUT_FILE}_${GP_EXT}
+				date >> ${SECFS_WATCH_OUTPUT_FILE}_${GP_EXT}
+				echo >> ${SECFS_WATCH_OUTPUT_FILE}_${GP_EXT}
+				secfsd -profile show $GP | cat >> ${SECFS_WATCH_OUTPUT_FILE}_${GP_EXT}
+				secfsd -profile clear $GP
+				echo >> ${SECFS_WATCH_OUTPUT_FILE}_${GP_EXT}
+			done
+			sleep $interval
+		done &
+	else
+		voradmin cmd profile_on
+		 while [ 1 ]; do
+		        echo "============================= SAMPLE =============================" >> ${SECFS_WATCH_OUTPUT_FILE}
+		        date >> ${SECFS_WATCH_OUTPUT_FILE}
+		        echo >> ${SECFS_WATCH_OUTPUT_FILE}
+		        secfsd -profile show | cat >> ${SECFS_WATCH_OUTPUT_FILE}
+		        secfsd -profile clear
+		        echo >> ${SECFS_WATCH_OUTPUT_FILE}
 
-                echo "============================= SAMPLE =============================" >> ${SECFS_READ_OUTPUT_FILE}
-                date >> ${SECFS_READ_OUTPUT_FILE}
-                echo >> ${SECFS_READ_OUTPUT_FILE}
-                cat /proc/fs/secfs/read_histograms >> ${SECFS_READ_OUTPUT_FILE}
-                echo >> ${SECFS_READ_OUTPUT_FILE}
+		        echo "============================= SAMPLE =============================" >> ${SECFS_IO_OUTPUT_FILE}
+		        date >> ${SECFS_IO_OUTPUT_FILE}
+		        echo >> ${SECFS_IO_OUTPUT_FILE}
+		        cat /proc/fs/secfs/io_op_counters >> ${SECFS_IO_OUTPUT_FILE}
+		        echo >> ${SECFS_IO_OUTPUT_FILE}
 
-                echo "============================= SAMPLE =============================" >> ${SECFS_WRITE_OUTPUT_FILE}
-                date >> ${SECFS_WRITE_OUTPUT_FILE}
-                echo >> ${SECFS_WRITE_OUTPUT_FILE}
-                cat /proc/fs/secfs/write_histograms >> ${SECFS_WRITE_OUTPUT_FILE}
-                echo >> ${SECFS_WRITE_OUTPUT_FILE}
+		        echo "============================= SAMPLE =============================" >> ${SECFS_READ_OUTPUT_FILE}
+		        date >> ${SECFS_READ_OUTPUT_FILE}
+		        echo >> ${SECFS_READ_OUTPUT_FILE}
+		        cat /proc/fs/secfs/read_histograms >> ${SECFS_READ_OUTPUT_FILE}
+		        echo >> ${SECFS_READ_OUTPUT_FILE}
 
-                sleep $interval
-        done &
+		        echo "============================= SAMPLE =============================" >> ${SECFS_WRITE_OUTPUT_FILE}
+		        date >> ${SECFS_WRITE_OUTPUT_FILE}
+		        echo >> ${SECFS_WRITE_OUTPUT_FILE}
+		        cat /proc/fs/secfs/write_histograms >> ${SECFS_WRITE_OUTPUT_FILE}
+		        echo >> ${SECFS_WRITE_OUTPUT_FILE}
+
+		        sleep $interval
+		done &
+	fi
         SECFS_PID=$!
         disown $SECFS_PID
 }
 function stop_secfs() {
         echo "Stopping secfs profiling."
         kill $SECFS_PID
-	voradmin cmd profile_off
+        if [ "$CTE_FUSE" == 'y' ]; then
+		GP_LIST=$(secfsd -status guard | grep "^/" | awk '{ print $1 }')
+		for GP in $GP_LIST; do
+			secfsd -profile off $GP
+		done
+	else
+		voradmin cmd profile_off
+	fi
 }
 
 function report_secfs() {
